@@ -1,12 +1,13 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
+import json
 from .models import DadosUser
 from django.db.models import OuterRef, Subquery, F, FloatField, ExpressionWrapper
 from .funcoes.genpdf import generate_receipt_pdf
 from .funcoes.produtos import cadastrar, get_products, vender_produto, update_produtos, update_venda
 from .funcoes.client import cadastrar_cliente, get_cliente, update_clients
 from .funcoes.dashbaord import dados_dash
-from .funcoes.imports import import_products
+from .funcoes.imports import import_products, import_products_chunked
 from .api.pagarme import pagar_me
 from .funcoes.carrinho import delete_cart
 from django.contrib.auth import login, authenticate
@@ -230,15 +231,99 @@ def login_app(request):
 def import_product(request):
     resp = {}
     if request.method == 'POST':   
-        file = request.FILES.get('file', None)
-        importar = import_products(file)
-        resp['status'] = 'sucesso'
-        resp['msg'] = 'Arquivo carregado com sucesso!'
-        resp['dados'] = importar
+        try:
+            file = request.FILES.get('file', None)
+            
+            if not file:
+                resp['status'] = 'erro'
+                resp['msg'] = 'Nenhum arquivo foi enviado.'
+                return JsonResponse(resp)
+            
+            # Importa produtos em lotes
+            resultado = import_products(file, batch_size=50)
+            
+            if resultado.get('success', False):
+                stats = resultado['statistics']
+                resp['status'] = 'sucesso'
+                resp['msg'] = f'Importação concluída! {stats["created"]} criados, {stats["updated"]} atualizados.'
+                
+                if stats['errors'] > 0:
+                    resp['msg'] += f' {stats["errors"]} produtos com erro.'
+                    
+                resp['dados'] = resultado['data']
+                resp['statistics'] = stats
+            else:
+                resp['status'] = 'erro'
+                resp['msg'] = 'Falha na importação dos produtos.'
+                
+        except Exception as e:
+            print(f"Erro na importação: {str(e)}")
+            resp['status'] = 'erro' 
+            resp['msg'] = 'Erro interno durante a importação. Tente com um arquivo menor.'
+            
     else:
         resp['status'] = 'erro'
-        resp['msg'] = 'Houve um erro no methodo de envio.'
+        resp['msg'] = 'Método de requisição inválido.'
+        
     return JsonResponse(resp)
+
+@csrf_exempt
+def import_product_with_progress(request):
+    """
+    Importação de produtos com streaming de progresso
+    Para arquivos muito grandes (>1000 produtos)
+    """
+    if request.method == 'POST':
+        try:
+            file = request.FILES.get('file', None)
+            
+            if not file:
+                return JsonResponse({
+                    'status': 'erro',
+                    'msg': 'Nenhum arquivo foi enviado.'
+                })
+            
+            # Função generator que retorna progresso
+            def generate_progress():
+                yield "data: " + json.dumps({'status': 'iniciando', 'msg': 'Iniciando importação...'}) + "\n\n"
+                
+                try:
+                    for progress in import_products_chunked(file, chunk_size=20):
+                        yield "data: " + json.dumps({
+                            'status': 'progresso',
+                            'progress': progress
+                        }) + "\n\n"
+                        
+                    yield "data: " + json.dumps({
+                        'status': 'concluido',
+                        'msg': 'Importação finalizada com sucesso!'
+                    }) + "\n\n"
+                    
+                except Exception as e:
+                    yield "data: " + json.dumps({
+                        'status': 'erro',
+                        'msg': f'Erro durante a importação: {str(e)}'
+                    }) + "\n\n"
+            
+            response = StreamingHttpResponse(
+                generate_progress(),
+                content_type='text/plain'
+            )
+            response['Cache-Control'] = 'no-cache'
+            response['Connection'] = 'keep-alive'
+            
+            return response
+            
+        except Exception as e:
+            return JsonResponse({
+                'status': 'erro',
+                'msg': f'Erro interno: {str(e)}'
+            })
+    
+    return JsonResponse({
+        'status': 'erro',
+        'msg': 'Método não permitido.'
+    })
 
 @csrf_exempt
 def meus_pedidos(request, usuario):
