@@ -24,5 +24,13 @@ urlpatterns = [
     path('api/config/aboutus/', views.aboutus),
     path('api/adm/condicional/', views.produto_condicional),
     path('api/add/produto-condicional/', views.add_produto_cond),
-    path('api/del/img-produto/', views.del_img_link)
+    path('api/del/img-produto/', views.del_img_link),
+    path('api/adm/produtos/sequencia/', views.admin_produtos_sequencia),
+    path('api/adm/produtos/atualizar-sequencia/', views.admin_atualizar_sequencia),
+    path('api/adm/produtos/toggle-loja/', views.admin_toggle_loja),
 ]
+# from django.conf import settings
+# from django.conf.urls.static import static
+
+# urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

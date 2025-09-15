@@ -14,7 +14,18 @@ def import_products(file):
         codigo = row[5].value
         ref = row[6].value
         custo = row[7].value
-        #status = row[8].value      
+        #status = row[8].value
+        # teste = {
+        #     'marca': marca,
+        #     'tamanho': tamanho,
+        #     'preco': preco,
+        #     'data': data,
+        #     'qtde': qtde,
+        #     'codigo': codigo,
+        #     'ref': ref,
+        #     'custo': custo
+        # }
+        # print(teste)
         ja_existe = Produto.objects.filter(codigo=codigo)
         if ja_existe:
             pass

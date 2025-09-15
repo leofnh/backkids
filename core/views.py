@@ -601,3 +601,180 @@ def print_receipt_view(request, sale_id):
     response['Content-Disposition'] = f'inline; filename="recibo_{sale_id}.pdf"'
     response.write(pdf)
     return response
+
+
+@csrf_exempt
+def admin_produtos_sequencia(request):
+    """
+    View para gerenciar sequência de produtos no painel administrativo
+    Produtos ativos: sem paginação (todos carregados para organização)
+    Produtos inativos: com paginação para performance
+    """
+    if request.method == 'GET':
+        try:
+            from django.core.paginator import Paginator
+            from django.db.models import Q
+            
+            # Parâmetros de paginação (apenas para produtos inativos)
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 20))
+            search = request.GET.get('search', '').strip()
+            
+            # Query base
+            produtos_query = Produto.objects.filter(estoque__gte=1)
+            
+            # Aplica filtros de busca se fornecidos
+            if search:
+                # Busca por código exato, referências similares e nome
+                produtos_query = produtos_query.filter(
+                    Q(codigo__iexact=search) |  # Código exato
+                    Q(ref__icontains=search) |   # Referência contém o termo
+                    Q(produto__icontains=search) | # Nome do produto contém o termo
+                    Q(marca__icontains=search)   # Marca contém o termo
+                ).distinct()
+            
+            # Agrupa produtos por referência para evitar duplicatas
+            produtos = produtos_query.values(
+                'id', 'produto', 'marca', 'ref', 'sequencia', 'loja', 
+                'estoque', 'preco', 'codigo', 'descricao'
+            ).order_by('sequencia', 'ref')
+            
+            produtos_agrupados = {}
+            for produto in produtos:
+                ref = produto['ref']
+                if ref not in produtos_agrupados:
+                    produtos_agrupados[ref] = produto
+                else:
+                    # Mantém o produto com maior estoque ou mais recente
+                    if produto['estoque'] > produtos_agrupados[ref]['estoque']:
+                        produtos_agrupados[ref] = produto
+            
+            # Separa produtos ativos e inativos
+            produtos_lista = list(produtos_agrupados.values())
+            produtos_ativos = [p for p in produtos_lista if p['loja']]
+            produtos_inativos = [p for p in produtos_lista if not p['loja']]
+            
+            # PRODUTOS ATIVOS: Todos sem paginação (para organização de sequência)
+            produtos_ativos_ordenados = sorted(produtos_ativos, key=lambda x: x['sequencia'])
+            
+            # PRODUTOS INATIVOS: Com paginação para performance
+            paginator = Paginator(produtos_inativos, page_size)
+            
+            # Verifica se a página solicitada é válida
+            if page > paginator.num_pages and paginator.num_pages > 0:
+                page = paginator.num_pages
+            if page < 1:
+                page = 1
+                
+            produtos_inativos_paginados = paginator.get_page(page) if paginator.num_pages > 0 else []
+            
+            resp = {
+                "status": 'sucesso',
+                "produtos_ativos": produtos_ativos_ordenados,  # TODOS os ativos
+                "produtos_inativos": list(produtos_inativos_paginados),  # Inativos paginados
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": paginator.num_pages,
+                    "total_items": paginator.count,
+                    "items_per_page": page_size,
+                    "has_next": produtos_inativos_paginados.has_next() if produtos_inativos_paginados else False,
+                    "has_previous": produtos_inativos_paginados.has_previous() if produtos_inativos_paginados else False,
+                    "next_page": produtos_inativos_paginados.next_page_number() if produtos_inativos_paginados and produtos_inativos_paginados.has_next() else None,
+                    "previous_page": produtos_inativos_paginados.previous_page_number() if produtos_inativos_paginados and produtos_inativos_paginados.has_previous() else None
+                },
+                "totals": {
+                    "ativos": len(produtos_ativos),
+                    "inativos": len(produtos_inativos),
+                    "total": len(produtos_lista)
+                },
+                "search_term": search
+            }
+            return JsonResponse(resp)
+            
+        except Exception as e:
+            resp = {
+                'status': 'erro',
+                'msg': f'Erro ao buscar produtos: {str(e)}'
+            }
+            return JsonResponse(resp)
+    
+    else:
+        resp = {
+            'status': 'erro',
+            'msg': 'Método não permitido'
+        }
+        return JsonResponse(resp)
+
+@csrf_exempt
+def admin_atualizar_sequencia(request):
+    """
+    View para atualizar sequência de produtos
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            produtos = data.get('produtos', [])
+            
+            for produto_data in produtos:
+                produto_id = produto_data.get('id')
+                nova_sequencia = produto_data.get('sequencia')
+                
+                # Atualiza todos os produtos com a mesma referência
+                produto = Produto.objects.get(id=produto_id)
+                Produto.objects.filter(ref=produto.ref).update(sequencia=nova_sequencia)
+            
+            resp = {
+                "status": 'sucesso',
+                "msg": 'Sequência atualizada com sucesso!'
+            }
+            return JsonResponse(resp)
+            
+        except Exception as e:
+            resp = {
+                'status': 'erro',
+                'msg': f'Erro ao atualizar sequência: {str(e)}'
+            }
+            return JsonResponse(resp)
+    
+    else:
+        resp = {
+            'status': 'erro',
+            'msg': 'Método não permitido'
+        }
+        return JsonResponse(resp)
+
+@csrf_exempt
+def admin_toggle_loja(request):
+    """
+    View para ativar/desativar produto na loja
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            produto_id = data.get('id')
+            status_loja = data.get('loja')
+            
+            # Atualiza todos os produtos com a mesma referência
+            produto = Produto.objects.get(id=produto_id)
+            Produto.objects.filter(ref=produto.ref).update(loja=status_loja)
+            
+            status_text = 'ativado' if status_loja else 'desativado'
+            resp = {
+                "status": 'sucesso',
+                "msg": f'Produto {status_text} na loja com sucesso!'
+            }
+            return JsonResponse(resp)
+            
+        except Exception as e:
+            resp = {
+                'status': 'erro',
+                'msg': f'Erro ao atualizar status: {str(e)}'
+            }
+            return JsonResponse(resp)
+    
+    else:
+        resp = {
+            'status': 'erro',
+            'msg': 'Método não permitido'
+        }
+        return JsonResponse(resp)
