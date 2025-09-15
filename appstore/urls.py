@@ -11,7 +11,6 @@ urlpatterns = [
     path('api/dashboard/', views.dashboard),
     path('api/login/', views.login_app),
     path('api/import/products/', views.import_product),
-    path('api/import/products/progress/', views.import_product_with_progress),
     path('pdf/comprovante/<int:sale_id>/', views.print_receipt_view),
     path('api/venda/', views.venda),
     path('api/produtos/loja/', views.produtos_loja),
