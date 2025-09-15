@@ -28,7 +28,7 @@ def import_products(file):
         # print(teste)
         ja_existe = Produto.objects.filter(codigo=codigo)
         if ja_existe:
-            pass
+            ja_existe.update(preco=preco)            
         else:            
             try:
                 Produto.objects.create(
