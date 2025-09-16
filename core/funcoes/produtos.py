@@ -7,7 +7,10 @@ def cadastrar(data):
     try:
         codigo = data.get('codigo', '')
         produto = data.get('produto', '')       
-        existe = Produto.objects.filter(codigo=codigo)     
+        existe = Produto.objects.filter(codigo=codigo)
+        last_seq = Produto.objects.filter(loja=True).order_by('-sequencia').first()
+        if last_seq:
+            data['sequencia'] = last_seq.sequencia + 1
         hoje = datetime.today()
         preco = float(data.get('preco', '').replace(",", ".").replace("R$", ""))           
         custo = float(data.get('custo', '').replace(",", ".").replace("R$", ""))     
