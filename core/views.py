@@ -3,7 +3,8 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import DadosUser
 from django.db.models import OuterRef, Subquery, F, FloatField, ExpressionWrapper
 from .funcoes.genpdf import generate_receipt_pdf
-from .funcoes.produtos import cadastrar, get_products, vender_produto, update_produtos, update_venda
+from .funcoes.produtos import (cadastrar, get_products, vender_produto, 
+                               update_produtos, update_venda, get_condicionais)
 from .funcoes.client import cadastrar_cliente, get_cliente, update_clients
 from .funcoes.dashbaord import dados_dash
 from .funcoes.imports import import_products
@@ -126,18 +127,18 @@ def produtos(request):
 def clientes(request):
     if request.method == 'POST':
         data = json.loads(request.body.decode("utf-8"))
-        resp = cadastrar_cliente(data)     
+        resp = cadastrar_cliente(data)
         return JsonResponse(resp)
     elif request.method == 'GET':
         dados = get_cliente()
-        dados_json = list(dados.values('nome', 'cpf', 'idt', 'dn', 
+        dados_json = list(dados.values('nome', 'cpf', 'idt', 'dn',
                                        'rua', 'bairro', 'cidade',
-                                       'numero', 'sapato', 'roupa', 'cadastro', 'id', 'telefone'
-                                       ))
-     
+                                       'numero', 'sapato', 'roupa', 'cadastro', 'id', 
+                                       'telefone'
+        ))
+
         resp = {
             "dados": dados_json,
-            
         }
         return JsonResponse(resp)
     elif request.method == 'PUT':
@@ -150,6 +151,11 @@ def venda(request):
     if request.method == 'POST':
         data = json.loads(request.body.decode("utf-8"))
         resp = vender_produto(data)
+        condicionais = get_condicionais()
+        dados = condicionais['dados']
+        produtos = condicionais['produtos']
+        resp['dados'] = list(dados.values())
+        resp['dados_produtos'] = list(produtos.values())
         return JsonResponse(resp)
     elif request.method == 'GET':
         dados = get_cliente()
@@ -496,24 +502,45 @@ def produto_condicional(request):
         )
         resp['dados'] = list(dados.values())
 
-    elif request.method == 'GET':
-        sub_dados = Cliente.objects.filter(cpf=OuterRef('cliente'))
-        sub_produtos = Produto.objects.filter(codigo=OuterRef('produto'))
-        sub_produtos_cond = CondicionalCliente.objects.filter(id=OuterRef('condicional'))
-
-        dados = CondicionalCliente.objects.filter(aberto=True).annotate(
-            nome=Subquery(sub_dados.values('nome')),            
-        )
-        produtos = ProdutoCondicional.objects.filter(condicional__in=dados.values_list('id', flat=True)).annotate(
-            nome=Subquery(sub_produtos.values('produto')),
-            preco=Subquery(sub_produtos.values('preco')),
-            ref=Subquery(sub_produtos.values('ref')),
-            cpf=Subquery(sub_produtos_cond.values('cliente')),
-            
-        )
+    elif request.method == 'GET':       
+        condicionais = get_condicionais()
+        dados = condicionais['dados']
+        produtos = condicionais['produtos']
         resp['dados'] = list(dados.values())
         resp['dados_produtos'] = list(produtos.values())
         resp['status'] = 'sucesso'
+
+    elif request.method == 'DELETE':
+        id_cond = request.GET.get('id_cond')
+        try:
+            existe = ProdutoCondicional.objects.filter(id=id_cond)
+            if existe:
+                existe.delete()
+                resp['msg'] = 'Condicional deletada com sucesso!'
+                resp['status'] = 'sucesso'
+            else:
+                resp['msg'] = 'Esta condicional não foi localizada.'
+        except ProdutoCondicional.DoesNotExist:
+            resp['msg'] = 'Este item não existe na condicional deste cliente.'
+        except Exception as e:
+            resp['msg'] = f'Houve um erro inesperado: {str(e)}'
+    
+    elif request.method == 'PUT':
+        id_cond = request.GET.get('id_cond')
+        try:
+            existe = CondicionalCliente.objects.filter(id=id_cond, aberto=True)
+            if existe:
+                existe.update(aberto=False)
+                dados = CondicionalCliente.objects.filter(aberto=True).values()
+                resp['dados'] = list(dados)
+                resp['msg'] = 'Condicional finalizada com sucesso!'
+                resp['status'] = 'sucesso'
+            else:
+                resp['msg'] = 'Esta condicional não foi localizada ou já foi finalizada.'
+        except CondicionalCliente.DoesNotExist:
+            resp['msg'] = 'Este item não existe na condicional deste cliente.'
+        except Exception as e:
+            resp['msg'] = f'Houve um erro inesperado: {str(e)}'
     
     return JsonResponse(resp)
 
@@ -551,6 +578,7 @@ def add_produto_cond(request):
         except Exception as e: 
             resp['msg'] = f'Erro inesperado: {str(e)}'
     
+
     return JsonResponse(resp)
 
 @csrf_exempt
@@ -574,7 +602,6 @@ def del_img_link(request):
             resp['msg'] = f'Este objeto não foi localizado.'
 
     return JsonResponse(resp)
-
 
 @csrf_exempt
 def api_pagar_me(request):
@@ -601,7 +628,6 @@ def print_receipt_view(request, sale_id):
     response['Content-Disposition'] = f'inline; filename="recibo_{sale_id}.pdf"'
     response.write(pdf)
     return response
-
 
 @csrf_exempt
 def admin_produtos_sequencia(request):
@@ -778,3 +804,24 @@ def admin_toggle_loja(request):
             'msg': 'Método não permitido'
         }
         return JsonResponse(resp)
+
+@csrf_exempt
+def fix_produtos(request):
+    is_admin = request.user.is_superuser
+    if is_admin:
+        produtos = Produto.objects.all()
+        for i in produtos:
+            if not i.ref or i.ref.strip() == '':
+                i.ref = 'SEM-REFERENCIA'
+                i.save()
+            else:
+                i.ref = i.ref.strip().upper()
+                i.save()
+            if not i.codigo or i.codigo.strip() == '':
+                i.codigo = f'COD-{i.id}'
+                i.save()
+            else:
+                i.codigo = i.codigo.strip().upper()
+                i.save()
+  
+            

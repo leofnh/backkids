@@ -1,7 +1,8 @@
-from ..models import Produto, ProdutoVendido, Notinha
+from ..models import (Produto, ProdutoVendido, Notinha, 
+                      CondicionalCliente, ProdutoCondicional, Cliente)
 from datetime import timedelta, datetime, date
 from dateutil.relativedelta import relativedelta
-from django.db.models import Sum
+from django.db.models import Sum, OuterRef, Subquery
 
 def cadastrar(data):
     try:
@@ -68,6 +69,7 @@ def vender_produto(data):
         codigo = i['codigo']
         marca = i['marca']
         tamanho = i['tamanho']
+        condicional = i['condicional']
         preco = float(precoFloat)
         if forma == 'dinheiro' or forma == 'debito' or forma == 'pix':            
             preco = preco * 0.90
@@ -102,6 +104,19 @@ def vender_produto(data):
                             forma=forma,
                             vendedor=vendedor
                         )
+                        if condicional != 0:
+                            att_cond = CondicionalCliente.objects.filter(id=condicional,
+                                                                         aberto=True)
+                            if att_cond:
+                                att_cond.update(aberto=False)
+                            
+                            att_prod_cond = ProdutoCondicional.objects.filter(
+                                condicional=condicional,
+                                vendido=False
+                            )
+                            if att_prod_cond:
+                                att_prod_cond.update(vendido=True)                            
+
                         dados_codigo.estoque = estoque_atual
                         dados_codigo.save()                        
                         status_codigo = 'sucesso'                
@@ -117,7 +132,7 @@ def vender_produto(data):
                     resp['status'] = 'sucesso'
                     resp['msg'] = 'Venda realizada com sucesso!'
                     resp['tem_erro'] = tem_erro  
-                                 
+
             except Exception as e:
                 resp['msg'] = str(e)
                 resp['status'] = 'erro'
@@ -148,7 +163,6 @@ def vender_produto(data):
     )['total']
     resp['venda_hoje'] = vendas_hoje
     return resp
-        
 
 def update_produtos(codigo, value, produto):
     resp = {}
@@ -191,6 +205,26 @@ def update_produtos(codigo, value, produto):
         resp['status'] = 'erro'
     return resp
 
+def get_condicionais():
+    sub_dados = Cliente.objects.filter(cpf=OuterRef('cliente'))
+    sub_produtos = Produto.objects.filter(codigo=OuterRef('produto'))
+    sub_produtos_cond = CondicionalCliente.objects.filter(id=OuterRef('condicional'))
+
+    dados = CondicionalCliente.objects.filter(aberto=True).annotate(
+        nome=Subquery(sub_dados.values('nome')),
+        contato=Subquery(sub_dados.values('telefone'))
+    )
+    produtos = ProdutoCondicional.objects.filter(condicional__in=dados.values_list('id', flat=True)).annotate(
+        nome=Subquery(sub_produtos.values('produto')),
+        preco=Subquery(sub_produtos.values('preco')),
+        ref=Subquery(sub_produtos.values('ref')),
+        cpf=Subquery(sub_produtos_cond.values('cliente')), 
+    )
+    return {
+        'dados': dados, 
+        'produtos': produtos
+    }
+    
 
 def update_venda(data):
     resp = {}

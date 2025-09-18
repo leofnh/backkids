@@ -11,8 +11,7 @@ urlpatterns = [
     path('api/dashboard/', views.dashboard),
     path('api/login/', views.login_app),
     path('api/import/products/', views.import_product),
-    path('pdf/comprovante/<int:sale_id>/', views.print_receipt_view),
-    path('api/venda/', views.venda),
+    path('pdf/comprovante/<int:sale_id>/', views.print_receipt_view),    
     path('api/produtos/loja/', views.produtos_loja),
     path('api/add/carrinho/<int:usuario>/', views.carrinholoja),
     path('api/add/image/products/', views.send_image_product),
@@ -28,6 +27,7 @@ urlpatterns = [
     path('api/adm/produtos/sequencia/', views.admin_produtos_sequencia),
     path('api/adm/produtos/atualizar-sequencia/', views.admin_atualizar_sequencia),
     path('api/adm/produtos/toggle-loja/', views.admin_toggle_loja),
+    path('api/adm/fix-produtos/', views.fix_produtos)
 ]
 # from django.conf import settings
 # from django.conf.urls.static import static
