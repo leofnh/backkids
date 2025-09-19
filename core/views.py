@@ -830,8 +830,8 @@ def fix_produtos(request):
             resp['msg'] = 'Apenas administradores podem executar esta operação'
             return JsonResponse(resp)
         
-        if request.method != 'POST':
-            resp['msg'] = 'Método não permitido. Use POST.'
+        if request.method != 'GET':
+            resp['msg'] = 'Método não permitido. Use GET.'
             return JsonResponse(resp)        
         
         
@@ -920,8 +920,8 @@ def fix_produtos_lote(request):
             resp['msg'] = 'Apenas administradores podem executar esta operação'
             return JsonResponse(resp)
         
-        if request.method != 'POST':
-            resp['msg'] = 'Método não permitido. Use POST.'
+        if request.method != 'GET':
+            resp['msg'] = 'Método não permitido. Use GET.'
             return JsonResponse(resp)
             
         
