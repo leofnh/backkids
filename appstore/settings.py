@@ -65,35 +65,35 @@ WSGI_APPLICATION = 'appstore.wsgi.application'
 # }
 
 #postgres
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'ael',
-#         'USER': 'admin',
-#         'PASSWORD': 'leonardo01',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-#  }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ael',
+        'USER': 'admin',
+        'PASSWORD': 'leonardo01',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
+ }
 
-if not current_ip.startswith("127."):   
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-else:  # Produção (Postgres)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'ael',
-            'USER': 'admin',
-            'PASSWORD': 'leonardo01',
-            'HOST': 'localhost',
-            'PORT': '5432',
-        }
-    }
+# if not current_ip.startswith("127."):   
+#     DATABASES = {
+#         'default': {
+#             'ENGINE': 'django.db.backends.sqlite3',
+#             'NAME': BASE_DIR / 'db.sqlite3',
+#         }
+#     }
+# else:  # Produção (Postgres)
+#     DATABASES = {
+#         'default': {
+#             'ENGINE': 'django.db.backends.postgresql',
+#             'NAME': 'ael',
+#             'USER': 'admin',
+#             'PASSWORD': 'leonardo01',
+#             'HOST': 'localhost',
+#             'PORT': '5432',
+#         }
+#     }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
