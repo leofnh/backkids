@@ -27,7 +27,8 @@ urlpatterns = [
     path('api/adm/produtos/sequencia/', views.admin_produtos_sequencia),
     path('api/adm/produtos/atualizar-sequencia/', views.admin_atualizar_sequencia),
     path('api/adm/produtos/toggle-loja/', views.admin_toggle_loja),
-    path('api/adm/fix-produtos/', views.fix_produtos)
+    path('api/adm/fix-produtos/', views.fix_produtos),
+    path('api/adm/fix-produtos-lote/', views.fix_produtos_lote)
 ]
 # from django.conf import settings
 # from django.conf.urls.static import static

@@ -1,7 +1,8 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import DadosUser
-from django.db.models import OuterRef, Subquery, F, FloatField, ExpressionWrapper
+from django.db.models import (OuterRef, Subquery, F, FloatField, 
+                              ExpressionWrapper, Q)
 from .funcoes.genpdf import generate_receipt_pdf
 from .funcoes.produtos import (cadastrar, get_products, vender_produto, 
                                update_produtos, update_venda, get_condicionais)
@@ -12,11 +13,16 @@ from .api.pagarme import pagar_me
 from .funcoes.carrinho import delete_cart
 from django.contrib.auth import login, authenticate
 from django.contrib.auth.models import User
-from .models import (Carrinho, Produto, FotoProduto, FotoCapaSite, AboutUs, CondicionalCliente, 
+from .models import (Carrinho, Produto, FotoProduto, 
+                     FotoCapaSite, AboutUs, CondicionalCliente, 
                      ProdutoCondicional, Cliente)
-from django.http import HttpResponse
 
+from django.db import transaction
 import json
+from django.core.paginator import Paginator
+
+
+
 # Create your views here.
 @csrf_exempt
 def home(request):    
@@ -553,8 +559,10 @@ def add_produto_cond(request):
     if request.method == 'POST':
         codigo = request.POST.get('codigo')
         condicional = request.POST.get('condicional')
+        print(f"Condicional ID: {condicional}, Código do Produto: {codigo}")
         try:
-            existe_codigo = ProdutoCondicional.objects.filter(produto=codigo, condicional=condicional).exists()
+            existe_codigo = ProdutoCondicional.objects.filter(produto=codigo, 
+                                                              condicional=condicional).exists()
             if existe_codigo:
                 resp['msg'] = 'Este produto já foi adicionado à condicional.'
             else:
@@ -562,7 +570,8 @@ def add_produto_cond(request):
                 if not existe_produto:
                     resp['msg'] = 'Não existe este produto cadastrado.'
                     return JsonResponse(resp)
-                ProdutoCondicional.objects.create(produto=codigo, condicional=condicional)
+                ProdutoCondicional.objects.create(produto=codigo, 
+                                                  condicional=condicional)
                 resp['msg'] = 'Produto adicionado com sucesso.'
                 resp['status'] = 'sucesso'
                 sub_produtos = Produto.objects.filter(codigo=OuterRef('produto'))
@@ -575,7 +584,7 @@ def add_produto_cond(request):
                     ref=Subquery(sub_produtos.values('ref')),
                 ).values()
                 resp['dados_produtos'] = list(produtos)
-        except Exception as e: 
+        except Exception as e:
             resp['msg'] = f'Erro inesperado: {str(e)}'
     
 
@@ -638,8 +647,7 @@ def admin_produtos_sequencia(request):
     """
     if request.method == 'GET':
         try:
-            from django.core.paginator import Paginator
-            from django.db.models import Q
+            
             
             # Parâmetros de paginação (apenas para produtos inativos)
             page = int(request.GET.get('page', 1))
@@ -807,21 +815,211 @@ def admin_toggle_loja(request):
 
 @csrf_exempt
 def fix_produtos(request):
-    is_admin = request.user.is_superuser
-    if is_admin:
-        produtos = Produto.objects.all()
-        for i in produtos:
-            if not i.ref or i.ref.strip() == '':
-                i.ref = 'SEM-REFERENCIA'
-                i.save()
-            else:
-                i.ref = i.ref.strip().upper()
-                i.save()
-            if not i.codigo or i.codigo.strip() == '':
-                i.codigo = f'COD-{i.id}'
-                i.save()
-            else:
-                i.codigo = i.codigo.strip().upper()
-                i.save()
-  
+    """
+    Corrige produtos em lote com operações otimizadas
+    Processa em batches para evitar timeout
+    """
+    resp = {
+        'status': 'erro',
+        'msg': 'Acesso negado'
+    }
+    
+    try:
+        # Verifica se é admin
+        if not request.user.is_superuser:
+            resp['msg'] = 'Apenas administradores podem executar esta operação'
+            return JsonResponse(resp)
+        
+        if request.method != 'POST':
+            resp['msg'] = 'Método não permitido. Use POST.'
+            return JsonResponse(resp)        
+        
+        
+        # Conta total de produtos para processar
+        total_produtos = Produto.objects.count()
+        
+        # Define tamanho do batch para evitar timeout
+        batch_size = 500
+        processed = 0
+        updated_refs = 0
+        updated_codigos = 0
+        
+        # Processa em batches usando transações
+        with transaction.atomic():
+            # 1. Atualiza REF vazias ou nulas em lote
+            refs_vazias = Produto.objects.filter(
+                Q(ref__isnull=True) | Q(ref__exact='') | Q(ref__regex=r'^\s*$')
+            )
+            count_refs = refs_vazias.update(ref='SEM-REFERENCIA')
+            updated_refs += count_refs
             
+            # 2. Atualiza REF para uppercase e remove espaços em lote
+            refs_para_limpar = Produto.objects.exclude(
+                Q(ref__isnull=True) | Q(ref__exact='') | Q(ref__regex=r'^\s*$')
+            ).exclude(ref='SEM-REFERENCIA')
+            
+            # Processa refs em batches
+            for produto in refs_para_limpar.iterator(chunk_size=batch_size):
+                ref_limpa = produto.ref.strip().upper()
+                if produto.ref != ref_limpa:
+                    Produto.objects.filter(id=produto.id).update(ref=ref_limpa)
+                    updated_refs += 1
+                processed += 1
+            
+            # 3. Atualiza códigos vazios ou nulos
+            codigos_vazios = Produto.objects.filter(
+                Q(codigo__isnull=True) | Q(codigo__exact='') | Q(codigo__regex=r'^\s*$')
+            )
+            
+            # Para códigos vazios, precisa fazer individualmente por causa do ID
+            for produto in codigos_vazios.iterator(chunk_size=batch_size):
+                novo_codigo = f'COD-{produto.id}'
+                Produto.objects.filter(id=produto.id).update(codigo=novo_codigo)
+                updated_codigos += 1
+            
+            # 4. Limpa códigos existentes (uppercase e remove espaços)
+            codigos_para_limpar = Produto.objects.exclude(
+                Q(codigo__isnull=True) | Q(codigo__exact='') | Q(codigo__regex=r'^\s*$')
+            )
+            
+            for produto in codigos_para_limpar.iterator(chunk_size=batch_size):
+                codigo_limpo = produto.codigo.strip().upper()
+                if produto.codigo != codigo_limpo:
+                    Produto.objects.filter(id=produto.id).update(codigo=codigo_limpo)
+                    updated_codigos += 1
+        
+        resp = {
+            'status': 'sucesso',
+            'msg': 'Produtos corrigidos com sucesso!',
+            'dados': {
+                'total_produtos': total_produtos,
+                'refs_atualizadas': updated_refs,
+                'codigos_atualizados': updated_codigos,
+                'processados': processed
+            }
+        }
+        
+    except Exception as e:
+        resp = {
+            'status': 'erro',
+            'msg': f'Erro durante a correção dos produtos: {str(e)}'
+        }
+    
+    return JsonResponse(resp)
+
+@csrf_exempt 
+def fix_produtos_lote(request):
+    """
+    Versão otimizada para corrigir produtos em lotes menores
+    Para uso quando houver muitos registros
+    """
+    resp = {'status': 'erro', 'msg': 'Acesso negado'}
+    
+    try:
+        if not request.user.is_superuser:
+            resp['msg'] = 'Apenas administradores podem executar esta operação'
+            return JsonResponse(resp)
+        
+        if request.method != 'POST':
+            resp['msg'] = 'Método não permitido. Use POST.'
+            return JsonResponse(resp)
+            
+        
+        
+        # Parâmetros do request
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        batch_size = data.get('batch_size', 100)  # Lotes pequenos por padrão
+        limit = data.get('limit', 1000)  # Limita quantos processar por vez
+        
+        # Estatísticas
+        stats = {
+            'refs_vazias': 0,
+            'codigos_vazios': 0, 
+            'refs_limpos': 0,
+            'codigos_limpos': 0,
+            'processados': 0
+        }
+        
+        with transaction.atomic():
+            # 1. Corrige REFs vazias (limitado)
+            refs_vazias = Produto.objects.filter(
+                Q(ref__isnull=True) | Q(ref__exact='') | Q(ref__regex=r'^\s*$')
+            )[:limit]
+            
+            if refs_vazias:
+                count = refs_vazias.update(ref='SEM-REFERENCIA')
+                stats['refs_vazias'] = count
+            
+            # 2. Corrige códigos vazios (limitado)  
+            codigos_vazios = Produto.objects.filter(
+                Q(codigo__isnull=True) | Q(codigo__exact='') | Q(codigo__regex=r'^\s*$')
+            )[:limit]
+            
+            for produto in codigos_vazios:
+                Produto.objects.filter(id=produto.id).update(
+                    codigo=f'COD-{produto.id}'
+                )
+                stats['codigos_vazios'] += 1
+                
+                if stats['codigos_vazios'] >= limit:
+                    break
+            
+            # 3. Limpa alguns produtos existentes (limitado)
+            produtos_para_limpar = Produto.objects.exclude(
+                Q(ref__isnull=True) | Q(ref__exact='') | Q(ref__regex=r'^\s*$') |
+                Q(codigo__isnull=True) | Q(codigo__exact='') | Q(codigo__regex=r'^\s*$')
+            )[:limit]
+            
+            for produto in produtos_para_limpar:
+                updated = False
+                
+                # Limpa REF se necessário
+                if produto.ref and produto.ref != produto.ref.strip().upper():
+                    ref_limpa = produto.ref.strip().upper()
+                    Produto.objects.filter(id=produto.id).update(ref=ref_limpa)
+                    stats['refs_limpos'] += 1
+                    updated = True
+                
+                # Limpa código se necessário  
+                if produto.codigo and produto.codigo != produto.codigo.strip().upper():
+                    codigo_limpo = produto.codigo.strip().upper()
+                    Produto.objects.filter(id=produto.id).update(codigo=codigo_limpo)
+                    stats['codigos_limpos'] += 1
+                    updated = True
+                
+                if updated:
+                    stats['processados'] += 1
+                    
+                if stats['processados'] >= limit:
+                    break
+        
+        # Conta quantos ainda precisam ser processados
+        pendentes = {
+            'refs_vazias': Produto.objects.filter(
+                Q(ref__isnull=True) | Q(ref__exact='') | Q(ref__regex=r'^\s*$')
+            ).count(),
+            'codigos_vazios': Produto.objects.filter(
+                Q(codigo__isnull=True) | Q(codigo__exact='') | Q(codigo__regex=r'^\s*$') 
+            ).count()
+        }
+        
+        resp = {
+            'status': 'sucesso',
+            'msg': 'Lote processado com sucesso!',
+            'dados': {
+                'processados_neste_lote': stats,
+                'ainda_pendentes': pendentes,
+                'parametros_usados': {
+                    'batch_size': batch_size,
+                    'limit': limit
+                }
+            }
+        }
+        
+    except Exception as e:
+        resp = {
+            'status': 'erro',
+            'msg': f'Erro durante o processamento: {str(e)}'
+        }
+    
+    return JsonResponse(resp)
