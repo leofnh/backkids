@@ -2,9 +2,10 @@ from ..models import Cliente, Notinha
 import datetime
 def cadastrar_cliente(data):
     nome = data.get('nome', '')
+    cpf = data.get('cpf', '')
     resp = {}
     if nome:
-        existe = Cliente.objects.filter(nome=nome)
+        existe = Cliente.objects.filter(nome=nome, cpf=cpf)
         if existe:
             resp['status'] = 'erro'
             resp['msg'] = 'Este cliente ja é cadastrado em nosso banco de dados! Verifique o nome do cliente.'
@@ -54,7 +55,7 @@ def cadastrar_cliente(data):
     else:
         resp['status'] = 'erro'
         resp['msg'] = 'CPF Inválido ou não digitado, por favor confirme o dado.'
-        return resp    
+        return resp
 
 
 def get_cliente():

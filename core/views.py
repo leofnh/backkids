@@ -492,7 +492,8 @@ def produto_condicional(request):
     if request.method == 'POST':
         cpf = request.POST.get('cpf')
         try:
-            aberto = CondicionalCliente.objects.filter(cliente=cpf, aberto=True)
+            aberto = CondicionalCliente.objects.filter(cliente=cpf,
+                                                       aberto=True)
             if aberto:
                 resp['msg'] = 'Este cliente já tem uma condicional em aberto, adicione produtos à ela.'
             else:
@@ -501,14 +502,14 @@ def produto_condicional(request):
                 resp['status'] = 'sucesso'
         except Exception as e:
             resp['msg'] = f"Houve um erro durante o cadastro. {str(e)}"
-        
+
         sub_dados = Cliente.objects.filter(cpf=OuterRef('cliente'))
         dados = CondicionalCliente.objects.filter(aberto=True).annotate(
             nome=Subquery(sub_dados.values('nome'))
         )
         resp['dados'] = list(dados.values())
 
-    elif request.method == 'GET':       
+    elif request.method == 'GET':
         condicionais = get_condicionais()
         dados = condicionais['dados']
         produtos = condicionais['produtos']
@@ -530,7 +531,7 @@ def produto_condicional(request):
             resp['msg'] = 'Este item não existe na condicional deste cliente.'
         except Exception as e:
             resp['msg'] = f'Houve um erro inesperado: {str(e)}'
-    
+
     elif request.method == 'PUT':
         id_cond = request.GET.get('id_cond')
         try:
@@ -547,7 +548,7 @@ def produto_condicional(request):
             resp['msg'] = 'Este item não existe na condicional deste cliente.'
         except Exception as e:
             resp['msg'] = f'Houve um erro inesperado: {str(e)}'
-    
+
     return JsonResponse(resp)
 
 @csrf_exempt
@@ -559,7 +560,7 @@ def add_produto_cond(request):
     if request.method == 'POST':
         codigo = request.POST.get('codigo')
         condicional = request.POST.get('condicional')
-        print(f"Condicional ID: {condicional}, Código do Produto: {codigo}")
+        qtde = request.POST.get('qtde', 1)
         try:
             existe_codigo = ProdutoCondicional.objects.filter(produto=codigo, 
                                                               condicional=condicional).exists()
@@ -571,7 +572,7 @@ def add_produto_cond(request):
                     resp['msg'] = 'Não existe este produto cadastrado.'
                     return JsonResponse(resp)
                 ProdutoCondicional.objects.create(produto=codigo, 
-                                                  condicional=condicional)
+                                                  condicional=condicional, qtde=qtde)
                 resp['msg'] = 'Produto adicionado com sucesso.'
                 resp['status'] = 'sucesso'
                 sub_produtos = Produto.objects.filter(codigo=OuterRef('produto'))
@@ -586,7 +587,21 @@ def add_produto_cond(request):
                 resp['dados_produtos'] = list(produtos)
         except Exception as e:
             resp['msg'] = f'Erro inesperado: {str(e)}'
-    
+
+    elif request.method == 'PUT':
+        data = json.loads(request.body.decode("utf-8"))
+        id_produto = data.get('id_produto')
+        qtde = data.get('qtde')       
+        try:
+            existe = ProdutoCondicional.objects.filter(id=id_produto)
+            if existe:
+                existe.update(qtde=qtde)
+                resp['msg'] = 'Quantidade atualizada com sucesso!'
+                resp['status'] = 'sucesso'
+            else:
+                resp['msg'] = 'Este produto não foi localizado na condicional.'
+        except Exception as e:
+            resp['msg'] = f'Houve um erro inesperado: {str(e)}'
 
     return JsonResponse(resp)
 

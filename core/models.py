@@ -110,7 +110,8 @@ class CondicionalCliente(models.Model):
 
 class ProdutoCondicional(models.Model):
     condicional = models.BigIntegerField()
-    produto = models.CharField(max_length=555)    
+    produto = models.CharField(max_length=555)
+    qtde = models.BigIntegerField(default=1)
     data_devolvido = models.DateTimeField(null=True)
     vendido = models.BooleanField(default=False)
     cadastro = models.DateTimeField(auto_now_add=True)
@@ -130,4 +131,4 @@ class FotoCapaSite(models.Model):
 class AboutUs(models.Model):
     page = models.TextField()
     cadastro = models.DateTimeField(auto_now_add=True)
-    update = models.DateTimeField(auto_now=True)    
+    update = models.DateTimeField(auto_now=True)
